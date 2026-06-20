@@ -1,0 +1,350 @@
+import { Server } from "@modelcontextprotocol/sdk/server/index.js";
+import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
+import {
+  CallToolRequestSchema,
+  ListToolsRequestSchema,
+} from "@modelcontextprotocol/sdk/types.js";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+import { writeFileSync, mkdirSync, existsSync } from "node:fs";
+import {
+  RunProcessArgs,
+  ExecutionLogArgs,
+  WriteFileArgs,
+} from "./schemas.js";
+import type { ServerConfig } from "./schemas.js";
+import { loadConfig } from "./config.js";
+import { CommandCache } from "./cache.js";
+import { ExecutionLogger } from "./logger.js";
+import { executeCommand } from "./executor.js";
+import { prependRtk } from "./rtk.js";
+import { categorizeError } from "./errors.js";
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+
+export class ServerCommandsRTK {
+  private readonly server: Server;
+  private readonly config: ServerConfig;
+  private readonly cache: CommandCache;
+  private readonly logger: ExecutionLogger;
+
+  constructor() {
+    const serverDir =
+      process.env.SERVER_DIR ||
+      path.resolve(__dirname, "..");
+
+    this.config = loadConfig(path.join(serverDir, "rtk-hook.toml"));
+    this.cache = new CommandCache(
+      path.join(serverDir, ".command-cache.json"),
+      this.config.debounce_ms,
+    );
+    this.logger = new ExecutionLogger(
+      path.join(serverDir, ".execution-log.jsonl"),
+      this.config.max_log_entries,
+    );
+
+    this.server = new Server(
+      { name: "server-commands-rtk", version: "0.2.0" },
+      { capabilities: { tools: {} } },
+    );
+
+    this.setupHandlers();
+  }
+
+  private setupHandlers(): void {
+    this.server.setRequestHandler(ListToolsRequestSchema, () => ({
+      tools: [
+        {
+          name: "run_process",
+          description:
+            "Run shell command with RTK auto-filtering (default: enabled)",
+          inputSchema: {
+            type: "object",
+            properties: {
+              command: { type: "string" },
+              cwd: { type: "string" },
+              description: { type: "string" },
+              clear_cache: {
+                type: "boolean",
+                default: false,
+              },
+              use_rtk_filter: {
+                type: "boolean",
+                default: true,
+                description:
+                  "Auto-wrap with RTK for token-minimized output (default: true)",
+              },
+              use_raw: {
+                type: "boolean",
+                default: false,
+                description:
+                  "Run raw command without RTK filtering (bypasses auto-RTK)",
+              },
+              model_used: {
+                type: "string",
+                description:
+                  "Model name that executed this command (for training metadata)",
+              },
+            },
+            required: ["command"],
+          },
+        },
+        {
+          name: "get_cache_stats",
+          description: "Get cache statistics",
+          inputSchema: { type: "object", properties: {} },
+        },
+        {
+          name: "clear_command_cache",
+          description: "Clear all cached commands",
+          inputSchema: { type: "object", properties: {} },
+        },
+        {
+          name: "cached_commands",
+          description: "List all cached commands",
+          inputSchema: { type: "object", properties: {} },
+        },
+        {
+          name: "execution_log",
+          description: "Get execution log (last 100 entries)",
+          inputSchema: {
+            type: "object",
+            properties: {
+              limit: { type: "number", default: 100 },
+            },
+          },
+        },
+        {
+          name: "write_file",
+          description:
+            "Write a file with base64-encoded content. Use this instead of write/filesystem_write_file when content contains special chars that break JSON serialization.",
+          inputSchema: {
+            type: "object",
+            properties: {
+              path: {
+                type: "string",
+                description: "Absolute path to output file",
+              },
+              content_b64: {
+                type: "string",
+                description: "Base64-encoded file content",
+              },
+            },
+            required: ["path", "content_b64"],
+          },
+        },
+      ],
+    }));
+
+    this.server.setRequestHandler(
+      CallToolRequestSchema,
+      async (request) => {
+        const { name, arguments: args } = request.params;
+        switch (name) {
+          case "run_process":
+            return this.handleRunProcess(args);
+          case "get_cache_stats":
+            return {
+              content: [
+                {
+                  type: "text",
+                  text: JSON.stringify(this.cache.stats(), null, 2),
+                },
+              ],
+            };
+          case "clear_command_cache":
+            this.cache.clear();
+            return {
+              content: [
+                {
+                  type: "text",
+                  text: JSON.stringify({
+                    message: "Cache cleared",
+                  }),
+                },
+              ],
+            };
+          case "cached_commands": {
+            const entries = this.cache.entries();
+            return {
+              content: [
+                {
+                  type: "text",
+                  text: JSON.stringify(
+                    { total: entries.length, commands: entries },
+                    null,
+                    2,
+                  ),
+                },
+              ],
+            };
+          }
+          case "execution_log": {
+            const parsed = ExecutionLogArgs.parse(args ?? {});
+            return {
+              content: [
+                {
+                  type: "text",
+                  text: JSON.stringify(
+                    {
+                      total: parsed.limit,
+                      entries: this.logger.read(parsed.limit),
+                    },
+                    null,
+                    2,
+                  ),
+                },
+              ],
+            };
+          }
+          case "write_file":
+            return this.handleWriteFile(args);
+          default:
+            throw new Error(`Unknown tool: ${name}`);
+        }
+      },
+    );
+  }
+
+  private async handleRunProcess(
+    args: Record<string, unknown> | undefined,
+  ) {
+    const parsed = RunProcessArgs.parse(args);
+
+    const model =
+      parsed.model_used ||
+      process.env.RTK_MODEL_USED ||
+      "unknown";
+
+    const useRtk = parsed.use_raw
+      ? false
+      : parsed.use_rtk_filter !== false;
+
+    const execCommand = prependRtk(parsed.command, {
+      useRtk,
+    });
+    const key = this.cache.hash(execCommand, parsed.cwd);
+    const cached = this.cache.get(key);
+
+    if (cached && !parsed.clear_cache) {
+      this.cache.recordHit();
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify(
+              {
+                cached: true,
+                key,
+                command: cached.raw_command || execCommand,
+                result: cached.result,
+                rtk_filtered: useRtk,
+              },
+              null,
+              2,
+            ),
+          },
+        ],
+      };
+    }
+
+    this.cache.recordMiss();
+    const result = await executeCommand(execCommand, {
+      timeout_ms: this.config.timeout_ms,
+      max_buffer_mb: this.config.max_buffer_mb,
+      cwd: parsed.cwd,
+    });
+
+    this.cache.set(key, {
+      result,
+      timestamp: Date.now(),
+      command: execCommand,
+      raw_command: parsed.command,
+      rtk_filtered: useRtk,
+      model_used: model,
+    });
+
+    this.logger.append({
+      timestamp: Date.now(),
+      key,
+      command: parsed.command,
+      command_exec: execCommand,
+      rtk_filtered: useRtk,
+      cached: !!cached,
+      success: result.success,
+      exitCode: result.exitCode,
+      duration_ms: result.duration_ms,
+      model_used: model,
+      error_type: categorizeError(
+        result.exitCode,
+        result.stderr,
+        result.stdout,
+      ),
+      stdout: result.stdout,
+      stderr: result.stderr,
+      stdout_lines: result.stdout.split("\n").length,
+      stderr_lines: result.stderr.split("\n").length,
+    });
+
+    return {
+      content: [
+        {
+          type: "text",
+          text: JSON.stringify(
+            {
+              cached: false,
+              key,
+              command: parsed.command,
+              result,
+              rtk_filtered: useRtk,
+            },
+            null,
+            2,
+          ),
+        },
+      ],
+    };
+  }
+
+  private async handleWriteFile(
+    args: Record<string, unknown> | undefined,
+  ) {
+    const parsed = WriteFileArgs.parse(args);
+    const { path: filePath, content_b64 } = parsed;
+
+    const dir = path.dirname(filePath);
+    if (!existsSync(dir)) {
+      mkdirSync(dir, { recursive: true });
+    }
+
+    const buffer = Buffer.from(content_b64, "base64");
+    const content = buffer.toString("utf8");
+    writeFileSync(filePath, content, "utf8");
+
+    return {
+      content: [
+        {
+          type: "text",
+          text: JSON.stringify(
+            {
+              path: filePath,
+              bytes_written: buffer.length,
+            },
+            null,
+            2,
+          ),
+        },
+      ],
+    };
+  }
+
+  async start(): Promise<void> {
+    const transport = new StdioServerTransport();
+    await this.server.connect(transport);
+    console.error("ServerCommandsRTK v0.2.0 running on stdio");
+  }
+
+  flush(): void {
+    this.cache.flush();
+  }
+}

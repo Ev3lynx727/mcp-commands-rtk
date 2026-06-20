@@ -1,0 +1,70 @@
+#!/usr/bin/env node
+import { ServerCommandsRTK } from "./server.js";
+
+function printHelp(): void {
+  const help = [
+    "Server-Commands-RTK v0.2.0 — MCP Server with RTK Caching",
+    "",
+    "Usage:",
+    "  node dist/index.js              Run MCP server",
+    "  node dist/index.js --help       Show this help",
+    "  node dist/index.js --stats      Show cache statistics",
+    "",
+    "MCP Tools:",
+    "  run_process          - Run shell command with RTK caching",
+    "  get_cache_stats      - Get cache hits/misses",
+    "  clear_command_cache  - Clear all cached commands",
+    "  cached_commands      - List all cached commands",
+    "  execution_log        - Get execution log (last 100 entries)",
+    "  write_file           - Write file with base64 content (avoids JSON parse issues)",
+    "",
+    "Environment:",
+    "  SERVER_DIR     - Path to server directory (default: parent of dist/)",
+    "  RTK_MODEL_USED - Model name for training metadata",
+  ].join("\n");
+  console.log("\n" + help + "\n");
+}
+
+if (process.argv.includes("--help") || process.argv.includes("-h")) {
+  printHelp();
+  process.exit(0);
+}
+
+if (process.argv.includes("--stats")) {
+  const { readFileSync, existsSync } = await import("node:fs");
+  const { resolve, dirname } = await import("node:path");
+  const { fileURLToPath } = await import("node:url");
+  const __dirname = dirname(fileURLToPath(import.meta.url));
+  const cacheFile = resolve(__dirname, "..", ".command-cache.json");
+  if (existsSync(cacheFile)) {
+    try {
+      const data = JSON.parse(readFileSync(cacheFile, "utf8"));
+      console.log("Cache Statistics:");
+      console.log("  Hits:", data.stats?.hits ?? 0);
+      console.log("  Misses:", data.stats?.misses ?? 0);
+      console.log(
+        "  Cached commands:",
+        Object.keys(data.cache ?? {}).length,
+      );
+    } catch {
+      console.log("No cache found.");
+    }
+  } else {
+    console.log("No cache found.");
+  }
+  process.exit(0);
+}
+
+const server = new ServerCommandsRTK();
+
+process.on("SIGTERM", () => {
+  server.flush();
+  process.exit(0);
+});
+
+process.on("SIGINT", () => {
+  server.flush();
+  process.exit(0);
+});
+
+server.start();
