@@ -1,0 +1,9 @@
+node_modules/
+dist/
+*.log
+.command-cache.json
+.execution-log.jsonl
+.execution-log.json
+.execution-log-*.jsonl*
+.env
+.env.*
