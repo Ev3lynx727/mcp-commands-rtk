@@ -1,30 +1,22 @@
 # server-commands-rtk
 
-MCP server for shell command execution with RTK auto-filtering (~90% token reduction), persistent caching, streaming spawn executor with timeout, and full execution logging for training data.
+MCP server that executes shell commands via MCP tools - with streaming spawn, automatic RTK token reduction, persistent caching, and full execution logging.
 
-## Architecture
+- **Streaming spawn** - uses `spawn` (not `exec`), no `maxBuffer` ceiling, pipes stdout/stderr directly
+- **Auto-RTK** - transparently wraps commands with RTK for ~90% token reduction
+- **Timeout + cancellation** - `AbortController` cancels stream collection immediately, `SIGKILL` terminates process tree
+- **Persistent cache** - results cached in `.command-cache.json` across sessions
+- **Execution logger** - append-only JSONL with auto-rotation, gzip compression, archive listing
+- **Safe file writes** - `write_file` with base64 content avoids JSON serialization breakage on special characters
 
-```
-MCP Client → run_process → RTK preprocessor → spawn("/bin/sh", ["-c", cmd])
-                            ↓
-                     AbortController (timeout)
-                            ↓
-                   collectStream (stdout/stderr)
-                            ↓
-                     Cache (.command-cache.json)
-                            ↓
-                     Logger (.execution-log.jsonl)
-```
+## Requirements
 
-The executor uses `spawn` (not `exec`) — streaming output with no `maxBuffer` ceiling. Timeout uses `AbortController` to cancel stream collection immediately, then `SIGKILL` to terminate the process tree.
+- **Node.js 24+** (ESM, `"type": "module"` in package.json)
+- **rtk CLI** - install via `curl -LsSf https://ev3lynx.github.io/rtk/install.sh | sh`
 
 ## Installation
 
 ```bash
-# Install RTK first
-curl -LsSf https://ev3lynx.github.io/rtk/install.sh | sh
-
-# Build
 cd server-commands-rtk
 npm install
 npm run build
@@ -49,47 +41,48 @@ Add to OpenCode config:
 
 | Tool | Description |
 |------|-------------|
-| `run_process` | Execute shell command with RTK auto-filtering |
-| `get_cache_stats` | View cache hits/misses and size |
-| `clear_command_cache` | Clear all cached commands |
-| `cached_commands` | List all cached commands with keys |
-| `execution_log` | Get execution log with optional archive history |
-| `list_archives` | List rotated log archive files for dataset pipeline |
-| `write_file` | Write file with base64 content (bypasses JSON serialization issues) |
+| `run_process` | Execute a shell command with RTK auto-filtering |
+| `get_cache_stats` | Show cache hit/miss counts and entry count |
+| `clear_command_cache` | Wipe all cached command results |
+| `cached_commands` | List all cached command keys and timestamps |
+| `execution_log` | Read execution log entries, optionally from archives |
+| `list_archives` | List rotated `.jsonl.gz` archive files |
+| `write_file` | Write a file from base64 content (safe for special characters) |
 
 ## Usage
 
 ### run_process
 
 ```javascript
-// Auto-RTK (default) — ~90% token reduction
+// Auto-RTK (default) - ~90% token reduction
 run_process({command: "ls -la"})
 
-// Raw output, no filtering
+// Bypass RTK filtering entirely
 run_process({command: "ls -la", use_raw: true})
 
-// Explicit RTK control
+// Explicitly enable/disable RTK
 run_process({command: "ls -la", use_rtk_filter: true})
 
-// With timeout override (ms)
+// Override default timeout (60s) per call
 run_process({command: "sleep 30", timeout_ms: 5000})
 
-// With working directory and description
+// Set working directory and attach metadata
 run_process({
   command: "npm test",
   cwd: "/path/to/project",
   description: "run unit tests",
+  model_used: "claude-sonnet-4",
   timeout_ms: 30000
 })
 
-// Clear cache for a specific command
+// Force cache bypass
 run_process({command: "npm install", clear_cache: true})
 ```
 
 ### execution_log
 
 ```javascript
-// Last 100 entries
+// Tail last 100 entries
 execution_log({limit: 100})
 
 // Include rotated archives for full history
@@ -98,53 +91,73 @@ execution_log({limit: 500, include_archives: true})
 
 ### write_file
 
-Use instead of `write`/`filesystem_write_file` when content contains quotes, backticks, or special characters that break JSON serialization:
+MCP tool parameters are JSON-serialized. Content with quotes, backticks, or long special-character strings can break the JSON framing. Use `write_file` with base64 encoding:
 
 ```javascript
 write_file({
   path: "/tmp/output.txt",
-  content_b64: "SGVsbG8gV29ybGQ="   // base64-encoded content
+  content_b64: "SGVsbG8gV29ybGQ="
 })
+```
+
+### list_archives
+
+```javascript
+list_archives()
+// Returns: { archives: ["file1.jsonl.gz", ...], count: 7 }
 ```
 
 ## Configuration (rtk-hook.toml)
 
+| Section | Key | Default | Description |
+|---------|-----|---------|-------------|
+| `[execution]` | `timeout_ms` | `60000` | Default per-command timeout (overridable per call) |
+| `[execution]` | `max_buffer_mb` | `10` | Max stdout/stderr collected per command |
+| `[execution]` | `max_log_entries` | `1000` | Entries kept in active log before rotation |
+| `[execution]` | `max_archives` | `50` | Max rotated archive files retained |
+| `[execution]` | `compress_archives` | `true` | Compress rotated logs with gzip |
+| `[cache]` | `debounce_ms` | `2000` | Window for deduplicating identical commands |
+
+Example:
+
 ```toml
 [execution]
-timeout_ms = 60000         # Default command timeout
-max_buffer_mb = 10         # Max output buffer per command
-max_log_entries = 1000     # Max in-memory log entries
-max_archives = 50          # Max rotated archive files
-compress_archives = true   # Gzip rotated archives
+timeout_ms = 60000
+max_buffer_mb = 10
+max_log_entries = 1000
+max_archives = 50
+compress_archives = true
 
 [cache]
-debounce_ms = 2000         # Debounce window for identical commands
-
-[hook]
-auto_wrap = true
-
-exclude = ["curl", "wget", "ssh", "scp"]
-
-[rtk]
-ultra_compact = false
+debounce_ms = 2000
 ```
 
 ## Cache
 
-- `.command-cache.json` — persistent JSON cache across sessions
-- Cache key = hash of (command + cwd)
-- Hit/miss tracking via `get_cache_stats`
+- **File**: `.command-cache.json` - persistent JSON, survives server restart
+- **Key**: SHA-256 hash of `(command + cwd)`
+- **Stats**: Hit/miss counters via `get_cache_stats`
+- **Flush**: Written to disk on every mutation + on SIGTERM/SIGINT
 
 ## Execution Log
 
-- `.execution-log.jsonl` — append-only JSONL with full stdout/stderr
-- Auto-rotation when `max_log_entries` exceeded
-- Compressed archives (`.jsonl.gz`) in `.execution-log.archives/`
-- Includes per-entry metadata: exit code, duration, model used, error category, RTK filter status, line counts
+- **File**: `.execution-log.jsonl` - append-only, one JSON object per line
+- **Rotation**: When `max_log_entries` reached, current log moves to `.execution-log.archives/` and compresses (if enabled)
+- **Per-entry metadata**: `timestamp`, `key`, `command`, `rtk_filtered`, `cached`, `success`, `exitCode`, `duration_ms`, `error_type`, `stdout`/`stderr`, `stdout_lines`/`stderr_lines`, `model_used`
+
+## MCP Resources
+
+Configured via `MCP_RESOURCE_ROOTS` env var:
+
+```bash
+export MCP_RESOURCE_ROOTS='{"headquarters": "~/headquarters"}'
+```
+
+Registers a resource template `headquarters://{path}` resolving to `~/headquarters/{path}`. Path traversal is denied.
 
 ## Response Format
 
-All tools return JSON with structure:
+All tools return JSON:
 
 ```json
 {
@@ -163,11 +176,11 @@ All tools return JSON with structure:
 }
 ```
 
-Error types: `timeout`, `not_found`, `permission_error`, `memory_error`, `unknown_error`.
+Error types: `timeout`, `not_found` (ENOENT), `permission_error` (EACCES/EPERM), `memory_error` (ENOMEM), `unknown_error`.
 
-Timeout returns `exitCode: 124` and stderr message.
+Timeout returns `exitCode: 124` with message in `stderr`.
 
-## Token Savings Example
+## Token Savings
 
 | Command | Raw Tokens | RTK Tokens | Savings |
 |---------|-----------|------------|---------|
@@ -176,16 +189,14 @@ Timeout returns `exitCode: 124` and stderr message.
 | `git diff` | ~15,000 | ~500 | **97%** |
 | `npm install` | ~5,000 | ~200 | **96%** |
 
-Typical session: 58% budget → ~5-10% with RTK.
-
 ## Environment Variables
 
-| Variable | Description |
-|----------|-------------|
-| `SERVER_DIR` | Custom server root directory |
-| `RTK_MODEL_USED` | Model name override for execution metadata |
-| `MCP_RESOURCE_ROOTS` | JSON map of scheme→dir for resource templates |
-| `LOG_LEVEL` | Log level (error, warn, info, debug) |
+| Variable | Required | Description |
+|----------|----------|-------------|
+| `SERVER_DIR` | No | Custom server root (defaults to directory containing `dist/`) |
+| `RTK_MODEL_USED` | No | Override for `model_used` in execution log metadata |
+| `MCP_RESOURCE_ROOTS` | No | JSON object mapping scheme names to directory paths |
+| `LOG_LEVEL` | No | Log level (`error`, `warn`, `info`, `debug`) |
 
 ## License
 
