@@ -2,6 +2,7 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![npm version](https://img.shields.io/npm/v/server-commands-rtk)](https://www.npmjs.com/package/server-commands-rtk)
+[![MCP Badge](https://lobehub.com/badge/mcp-full/ev3lynx727-server-commands-rtk)](https://lobehub.com/mcp/ev3lynx727-server-commands-rtk)
 
 MCP server that executes shell commands via MCP tools - with streaming spawn, automatic RTK token reduction, persistent caching, and full execution logging.
 
@@ -12,6 +13,14 @@ MCP server that executes shell commands via MCP tools - with streaming spawn, au
 - **Execution logger** - append-only JSONL with auto-rotation, gzip compression, archive listing
 - **Safe file writes** - `write_file` with base64 content avoids JSON serialization breakage on special characters
 - **URI resolver** - `resolve_uri` resolves `scheme://path` to absolute file paths via shared TOML config
+
+## Includes
+
+- ✅ **License** - This repository contains a LICENSE file
+- ✅ **Prompts** - This MCP Server includes prompts users can invoke
+- ✅ **Resources** - This MCP Server includes resources for attaching and managing context data
+
+---
 
 ## Requirements
 
