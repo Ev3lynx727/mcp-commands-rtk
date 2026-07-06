@@ -1,51 +1,19 @@
 # BENCHMARK.md — Performance Benchmarks
 
-> Date: 2026-07-03
-> Version: v0.3.0 (OpenCode v1.17)
+> Date: 2026-07-06
+> Version: v0.3.0 (RTK v0.43.0, OpenCode v1.17)
 > Status: Active
 
 ---
 
 ## OVERVIEW
 
-This document tracks performance benchmarks for the `commands-rtk` MCP server, including execution latency, `tryRewrite` overhead, cache performance, and token reduction via RTK filtering.
+This document tracks performance benchmarks for the `commands-rtk` MCP server, including execution latency, builtin passthrough logic, cache performance, and token reduction via RTK filtering.
 
-**Key difference from v0.2:** `tryRewrite()` replaced `prependRtk()`. Instead of blindly prefixing every command with `rtk`, it calls `rtk rewrite <cmd>` as a subprocess to determine if RTK has a filter. Adds ~55-65ms overhead on the first call per unique command, but avoids spawning `rtk` for commands it doesn't filter (`which`, `echo`, `cd`).
-
----
-
-## TRYREWRITE OVERHEAD
-
-### v0.2: `prependRtk()` → v0.3: `tryRewrite()`
-
-| Factor | v0.2 `prependRtk` | v0.3 `tryRewrite` | Impact |
-|--------|-------------------|-------------------|--------|
-| Cost | **0ms** (string concat) | **~58ms** (`execFileSync` subprocess) | +58ms first-call |
-| Dispatch | Blind `rtk <cmd>` prefix | Smart `rtk rewrite <cmd>` detection | Smarter, skips unfiltered commands |
-| `rtk_rewritten` signal | N/A | `true`/`false` in response + log | Better observability |
-| `rtk_compact` mode | N/A | `-u` flag appended on rewrite | Extra token savings on demand |
-
-### `rtk rewrite` Subprocess Times (ms)
-
-| Command | Min | Avg | Max |
-|---------|-----|------|-----|
-| `rtk rewrite "git status"` (has filter) | 54ms | 58ms | 65ms |
-| `rtk rewrite "echo hello"` (no filter, exit 1) | ~15ms | ~20ms | ~30ms |
-| `rtk rewrite "which curl"` (no filter, exit 1) | ~12ms | ~18ms | ~25ms |
-
-### Execution Time: First Call (no cache)
-
-| Case | `tryRewrite` | `executeCommand` | **Total** |
-|------|-------------|------------------|-----------|
-| v0.2 — `rtk git status` | 0ms | ~117ms | **~117ms** |
-| v0.3 — `rtk git status` | ~58ms | ~117ms | **~175ms** |
-| v0.3 — `which curl` (passthrough) | ~18ms | ~2ms | **~20ms** |
-
-### Execution Time: Cache Hit (repeat call)
-
-| Case | Lookup | **Total** |
-|------|--------|-----------|
-| Any command (v0.2 or v0.3) | ~4ms | **~4ms** |
+**Architecture:** executor.ts prepends `rtk` to external commands (git, docker, npm, ls...) with two passthrough exceptions:
+- **Shell builtins** (`cd`, `exit`, `export`, `source`, `.`, `set`, `alias`, `pushd`...) — no `rtk` prefix
+- **Compound commands** (`&&`, `||`, `;`, `|`) — no `rtk` prefix (RTK can't resolve shell operators)
+No subprocess overhead — string concat only.
 
 ---
 
@@ -67,10 +35,10 @@ This document tracks performance benchmarks for the `commands-rtk` MCP server, i
 
 ### Analysis
 
-1. **Cache miss latency** (~65ms) includes: `tryRewrite` subprocess, command execution, cache write
+1. **Cache miss latency** (~65ms) includes: command execution, cache write
 2. **Cache hit latency** (~4ms) is pure Map lookup — no I/O
 3. **Speedup** of 17x makes repeated commands effectively free
-4. v0.3 is slightly slower than v0.2 (~60ms → ~65ms) due to `tryRewrite` subprocess overhead
+4. Token savings from RTK (~60-90%) dwarf any latency difference
 
 ---
 
@@ -105,19 +73,17 @@ This document tracks performance benchmarks for the `commands-rtk` MCP server, i
 
 ---
 
-## SIGNAL FIELDS (NEW IN v0.3)
+## RTK PASSTHROUGH LOGIC
 
-`run_process` response and execution log now return:
+executor.ts uses two guards to skip the `rtk` prefix:
 
-| Field | Type | Meaning |
-|-------|------|---------|
-| `rtk_filtered` | bool | RTK was enabled for this command |
-| `rtk_rewritten` | bool | `rtk rewrite` found a filter and rewrote the command |
+| Guard | Pattern | Skip `rtk`? | Examples |
+|-------|---------|-------------|----------|
+| **isBuiltin** | `/^(cd\|pushd\|popd\|export\|source\|\\.\|set\|unset\|alias\|unalias\|exit\|trap\|exec\|type)($\|\s)/` | Yes | `cd /x`, `exit 42`, `export PATH=...` |
+| **isCompound** | `/[;&|]/` after stripping quoted strings | Yes | `a && b`, `a \| b`, `a; b` |
+| Default | All other commands | No (RTK prefixes) | `git status`, `docker ps`, `npm run` |
 
-Use cases:
-- `rtk_filtered: true` + `rtk_rewritten: true` → filtered by RTK
-- `rtk_filtered: true` + `rtk_rewritten: false` → RTK enabled but no filter → raw passthrough
-- RTK filtering handled by system hook (`rtk init -g`) at shell level
+**RTK v0.43.0** has dedicated subcommands for 50+ tools: git, docker, npm, npx, gh, cargo, pip, go, tsc, jest, ls, find, grep, rg, curl, kubectl...
 
 ---
 
@@ -127,7 +93,7 @@ Use cases:
 
 | Operation | Latency | Notes |
 |-----------|---------|-------|
-| Cache Miss (first run) | ~65ms | Includes `tryRewrite` + command execution |
+| Cache Miss (first run) | ~65ms | Includes command execution |
 | Cache Hit (subsequent) | ~4ms | Metadata lookup only |
 | Cache Write | ~5-10ms | JSON serialization + debounced disk I/O |
 
@@ -183,13 +149,13 @@ compress = true
 
 1. **Monitor log size** — 1000 entries at ~3MB is safe
 2. **Adjust timeout** — Increase for long-running builds/installs
-3. **Use RTK filtering by default** — 92% savings is significant
-4. **Use `rtk_compact` for output-heavy commands** — adds `-u` ultra-compact mode
+3. **RTK on by default** — simple commands auto-prefixed, builtins/compound skip
+4. **Use `cwd` param** — avoid `cd &&` in command strings (triggers `isCompound` guard)
 5. **Clear cache** via `clear_command_cache` if stale entries accumulate
 
 ### For Training Data Export
 
-1. **Single source** — `~/.local/share/state/commands-rtk/execution-log.jsonl` has full stdout/stderr + `rtk_rewritten` signal
+1. **Single source** — `~/.local/share/state/commands-rtk/execution-log.jsonl` has full stdout/stderr
 2. **Filter by model** — Use `model_used` field to segment
 
 ---
@@ -209,6 +175,6 @@ Stdio is the default — no network exposure, no auth needed, minimal attack sur
 
 ---
 
-*Last Updated: 2026-07-03*
+*Last Updated: 2026-07-06*
 *Benchmark Tool: `commands-rtk` v0.3.0*
 *OpenCode v1.17*
