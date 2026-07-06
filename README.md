@@ -1,14 +1,27 @@
-# server-commands-rtk
+# commands-rtk
+
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![CI](https://github.com/Ev3lynx727/commands-rtk/actions/workflows/ci.yml/badge.svg)](https://github.com/Ev3lynx727/commands-rtk/actions/workflows/ci.yml)
+[![npm version](https://img.shields.io/npm/v/commands-rtk)](https://www.npmjs.com/package/commands-rtk)
+[![MCP Badge](https://lobehub.com/badge/mcp-full/ev3lynx727-commands-rtk)](https://lobehub.com/mcp/ev3lynx727-commands-rtk)
 
 MCP server that executes shell commands via MCP tools - with streaming spawn, automatic RTK token reduction, persistent caching, and full execution logging.
 
 - **Streaming spawn** - uses `spawn` (not `exec`), no `maxBuffer` ceiling, pipes stdout/stderr directly
 - **Auto-RTK** - transparently wraps commands with RTK for ~90% token reduction
 - **Timeout + cancellation** - `AbortController` cancels stream collection immediately, `SIGKILL` terminates process tree
-- **Persistent cache** - results cached in `~/.local/share/state/server-commands-rtk/command-cache.json` across sessions
+- **Persistent cache** - results cached in `~/.local/share/state/commands-rtk/command-cache.json` across sessions
 - **Execution logger** - append-only JSONL with auto-rotation, gzip compression, archive listing
 - **Safe file writes** - `write_file` with base64 content avoids JSON serialization breakage on special characters
 - **URI resolver** - `resolve_uri` resolves `scheme://path` to absolute file paths via shared TOML config
+
+## Includes
+
+- ✅ **License** - This repository contains a LICENSE file
+- ✅ **Prompts** - This MCP Server includes prompts users can invoke
+- ✅ **Resources** - This MCP Server includes resources for attaching and managing context data
+
+---
 
 ## Requirements
 
@@ -18,7 +31,7 @@ MCP server that executes shell commands via MCP tools - with streaming spawn, au
 ## Installation
 
 ```bash
-cd server-commands-rtk
+cd commands-rtk
 npm install
 npm run build
 ```
@@ -28,11 +41,25 @@ Add to OpenCode config:
 ```json
 {
   "mcp": {
-    "server-commands-rtk": {
+    "commands-rtk": {
       "type": "local",
-      "command": ["node", "/path/to/server-commands-rtk/dist/index.js"],
+      "command": ["node", "/path/to/commands-rtk/dist/index.js"],
       "enabled": true,
       "timeout": 60000
+    }
+  }
+}
+```
+
+For MCP clients (Claude Desktop, Cursor, VSCode, etc):
+
+```json
+{
+  "mcpServers": {
+    "commands-rtk": {
+      "command": "node",
+      "args": ["/path/to/commands-rtk/dist/index.js"],
+      "env": {}
     }
   }
 }
@@ -148,10 +175,10 @@ debounce_ms = 2000
 
 ## State Files
 
-All runtime state lives under `~/.local/share/state/server-commands-rtk/`:
+All runtime state lives under `~/.local/share/state/commands-rtk/`:
 
 ```
-~/.local/share/state/server-commands-rtk/
+~/.local/share/state/commands-rtk/
 ├── command-cache.json      # Persistent command cache
 └── execution-log.jsonl     # Append-only execution log
 ```
@@ -169,7 +196,7 @@ Created automatically on first run (`mkdirSync` with `recursive: true`).
 
 - **File**: `execution-log.jsonl` - append-only, one JSON object per line
 - **Rotation**: When `max_log_entries` reached, half of entries archived. Rotated files land alongside the active log as `execution-log-{timestamp}.jsonl.gz`
-- **Per-entry metadata**: `timestamp`, `key`, `command`, `rtk_filtered`, `cached`, `success`, `exitCode`, `duration_ms`, `error_type`, `stdout`/`stderr`, `stdout_lines`/`stderr_lines`, `model_used`
+- **Per-entry metadata**: `timestamp`, `key`, `command`, `rtk_filtered`, `rtk_rewritten`, `cached`, `success`, `exitCode`, `duration_ms`, `error_type`, `stdout`/`stderr`, `stdout_lines`/`stderr_lines`, `model_used`
 
 ## MCP Resources & URI Resolution
 
@@ -201,7 +228,8 @@ All tools return JSON:
     "duration_ms": 12,
     "error_type": null
   },
-  "rtk_filtered": true
+  "rtk_filtered": true,
+  "rtk_rewritten": true
 }
 ```
 

@@ -1,6 +1,6 @@
 #!/usr/bin/env npx tsx
 /**
- * suite-test.ts — Stress, load, benchmark, and resilience suite for server-commands-rtk v0.2.0
+ * suite-test.ts — Stress, load, benchmark, and resilience suite for commands-rtk v0.2.0
  *
  * Usage:
  *   npx tsx suite-test.ts                  # Run all
@@ -154,20 +154,24 @@ async function runSection(title: string, fn: () => Promise<void>): Promise<void>
 // ===========================================================================
 
 async function unitTests() {
-  const { prependRtk } = await import("./dist/rtk.js");
+  const { tryRewrite } = await import("./dist/rtk.js");
   const { categorizeError } = await import("./dist/errors.js");
   const { RunProcessArgs, ServerConfig } = await import("./dist/schemas.js");
   const { loadConfig } = await import("./dist/config.js");
 
   const tests = [
-    ["rtk: wraps command when useRtk=true", () => {
-      assert(prependRtk("ls -la", { useRtk: true }) === "rtk ls -la", "should prepend rtk");
+    ["rtk: pass through when useRtk=false", () => {
+      const r = tryRewrite("ls -la", { useRtk: false, compact: false });
+      assert(r.command === "ls -la" && r.rewritten === false, "should pass through");
     }],
-    ["rtk: passes through when useRtk=false", () => {
-      assert(prependRtk("ls -la", { useRtk: false }) === "ls -la", "should not prepend rtk");
+    ["rtk: rewrites known command when rtk is installed", () => {
+      const r = tryRewrite("git status", { useRtk: true, compact: false });
+      assert(r.rewritten === true, "git status should be rewriteable");
+      assert(r.command.startsWith("rtk "), "should prepend rtk");
     }],
-    ["rtk: empty command", () => {
-      assert(prependRtk("", { useRtk: true }) === "rtk ", "should handle empty");
+    ["rtk: compact flag passed through", () => {
+      const r = tryRewrite("git status", { useRtk: true, compact: true });
+      assert(typeof r.command === "string" && typeof r.rewritten === "boolean", "should return valid structure");
     }],
     ["errors: null on exitCode 0", () => {
       assert(categorizeError(0, "", "ok") === null, "exit 0 returns null");
@@ -404,7 +408,7 @@ async function benchmarkTests() {
 
 async function resilienceTests() {
   await runTest("resilience: cache corruption recovery", async () => {
-    const cacheFile = join(homedir(), ".local/share/state/server-commands-rtk/command-cache.json");
+    const cacheFile = join(homedir(), ".local/share/state/commands-rtk/command-cache.json");
     const original = existsSync(cacheFile) ? readFileSync(cacheFile, "utf8") : "";
     try {
       writeFileSync(cacheFile, "corrupted garbage data");

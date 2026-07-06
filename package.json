@@ -1,12 +1,12 @@
 {
-  "name": "server-commands-rtk",
+  "name": "commands-rtk",
   "version": "0.3.0",
-  "description": "MCP server with RTK caching for shell commands — TypeScript + ESM + Zod",
+  "description": "MCP server with RTK caching for shell commands \u2014 TypeScript + ESM + Zod",
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "bin": {
-    "server-commands-rtk": "./dist/index.js"
+    "commands-rtk": "./dist/index.js"
   },
   "scripts": {
     "build": "tsc",
@@ -19,7 +19,7 @@
     "precommit": "npm run verify"
   },
   "dependencies": {
-    "@modelcontextprotocol/sdk": "^1.9.0",
+    "@modelcontextprotocol/sdk": "1.4.0",
     "smol-toml": "^1.3.0",
     "zod": "^3.24.0"
   },
@@ -31,5 +31,13 @@
   "files": [
     "dist/",
     "rtk-hook.toml"
+  ],
+  "keywords": [
+    "mcp",
+    "mcp-server",
+    "shell",
+    "command",
+    "rtk",
+    "token-minimization"
   ]
 }
