@@ -1,6 +1,7 @@
 # server-commands-rtk
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![CI](https://github.com/Ev3lynx727/server-commands-rtk/actions/workflows/ci.yml/badge.svg)](https://github.com/Ev3lynx727/server-commands-rtk/actions/workflows/ci.yml)
 [![npm version](https://img.shields.io/npm/v/server-commands-rtk)](https://www.npmjs.com/package/server-commands-rtk)
 [![MCP Badge](https://lobehub.com/badge/mcp-full/ev3lynx727-server-commands-rtk)](https://lobehub.com/mcp/ev3lynx727-server-commands-rtk)
 
@@ -45,6 +46,20 @@ Add to OpenCode config:
       "command": ["node", "/path/to/server-commands-rtk/dist/index.js"],
       "enabled": true,
       "timeout": 60000
+    }
+  }
+}
+```
+
+For MCP clients (Claude Desktop, Cursor, VSCode, etc):
+
+```json
+{
+  "mcpServers": {
+    "server-commands-rtk": {
+      "command": "node",
+      "args": ["/path/to/server-commands-rtk/dist/index.js"],
+      "env": {}
     }
   }
 }
