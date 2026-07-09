@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.4.1] - 2026-07-09
+
+- feat: add `setup` CLI command for one-time patching
+- fix: check `rtk rewrite` before auto-prepend `rtk` prefix
+- fix: capture rtk rewrite stdout from non-zero exit paths
+- fix: update CHANGELOG repo URLs (mcp-commands-rtk → server-commands-rtk)
+- fix: update README package name and clone URL
+- patch: add rtk fix for PR #2903 (`is_unsupported_shape` guard)
+- docs: update installation section with setup command and npx path
+- chore: add `apply-rtk-patch.sh` setup script
+- chore: init `patches/` directory
+- chore: add patch-package postinstall hook
+
 ## [0.4.0] - 2026-07-06
 
 - feat/major-update: RTK v0.42+, lean docs, backlog audit, schema SVG (#4)
@@ -30,6 +43,7 @@
 
 - init: scaffold project
 
+[0.4.1]: https://github.com/Ev3lynx727/server-commands-rtk/compare/v0.4.0...v0.4.1
 [0.4.0]: https://github.com/Ev3lynx727/server-commands-rtk/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/Ev3lynx727/server-commands-rtk/compare/v0.2.2...v0.3.0
 [0.2.2]: https://github.com/Ev3lynx727/server-commands-rtk/compare/v0.2.0...v0.2.2
