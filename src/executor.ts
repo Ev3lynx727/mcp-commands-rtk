@@ -83,18 +83,19 @@ export async function executeCommand(
   const trimmed = command.trimStart();
   const isBuiltin = /^(cd|pushd|popd|export|source|\.|set|unset|alias|unalias|exit|trap|exec|type)($|\s)/.test(trimmed);
   const isCompound = /[;&|]/.test(trimmed.replace(/'(?:[^'\\]|\\.)*'|"(?:[^"\\]|\\.)*"/g, ""));
-  // Check if rtk can rewrite this command. If not (exit 1, passthrough), run raw.
-  // Avoids rtk prepending commands find/fd with unsupported predicates.
+  // Ask rtk if it can rewrite this command. rtk rewrite returns exit 3 (rewritten)
+  // or exit 1 (passthrough) — both non-zero. Stick the stdout in the catch handler.
   let cmdLine: string;
   if (isBuiltin || isCompound) {
     cmdLine = command;
   } else {
+    let out = "";
     try {
-      const out = execFileSync("rtk", ["rewrite", trimmed], { encoding: "utf8", timeout: 2000 }).trim();
-      cmdLine = out && out !== trimmed ? out : trimmed;
-    } catch {
-      cmdLine = trimmed;
+      out = execFileSync("rtk", ["rewrite", trimmed], { encoding: "utf8", timeout: 2000 }).trim();
+    } catch (e: any) {
+      out = (e.stdout || "").toString().trim();
     }
+    cmdLine = out && out !== trimmed ? out : trimmed;
   }
 
   let timedOut = false;
