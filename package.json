@@ -1,12 +1,12 @@
 {
   "name": "commands-rtk",
-  "version": "0.3.0",
-  "description": "MCP server with RTK caching for shell commands \u2014 TypeScript + ESM + Zod",
+  "version": "0.4.1",
+  "description": "MCP server with RTK caching for shell commands — TypeScript + ESM + Zod",
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "bin": {
-    "commands-rtk": "./dist/index.js"
+    "commands-rtk": "dist/index.js"
   },
   "scripts": {
     "build": "tsc",
@@ -16,7 +16,9 @@
     "test": "npx tsx suite-test.ts",
     "test:quick": "npx tsx suite-test.ts --quick",
     "verify": "npx tsc --noEmit && npm run build",
-    "precommit": "npm run verify"
+    "precommit": "npm run verify",
+    "setup": "bash patches/apply-rtk-patch.sh",
+    "postinstall": "patch-package"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "1.4.0",
@@ -25,6 +27,7 @@
   },
   "devDependencies": {
     "@types/node": "^18.19.130",
+    "patch-package": "^8.0.1",
     "tsx": "^4.22.4",
     "typescript": "^5.7.0"
   },

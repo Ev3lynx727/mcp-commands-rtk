@@ -1,68 +1,50 @@
 # Changelog
 
-## [0.3.0] — 2026-07-03
+## [0.4.1] - 2026-07-09
 
-### Added
+- feat: add `setup` CLI command for one-time patching
+- fix: check `rtk rewrite` before auto-prepend `rtk` prefix
+- fix: capture rtk rewrite stdout from non-zero exit paths
+- fix: update CHANGELOG repo URLs (mcp-commands-rtk → server-commands-rtk)
+- fix: update README package name and clone URL
+- patch: add rtk fix for PR #2903 (`is_unsupported_shape` guard)
+- docs: update installation section with setup command and npx path
+- chore: add `apply-rtk-patch.sh` setup script
+- chore: init `patches/` directory
+- chore: add patch-package postinstall hook
 
-- `resolve_uri` tool — resolves `scheme://path` to absolute file paths via shared TOML config
-- `src/resolver.ts` — URI resolution module (forked from uri-resolver), exposes `resolveUri()`, `listSchemes()`, `SchemeEntry`
-- `ResolveUriArgs` Zod schema in schemas.ts
+## [0.4.0] - 2026-07-06
 
-### Changed
+- feat/major-update: RTK v0.42+, lean docs, backlog audit, schema SVG (#4)
 
-- **State files relocated** from install directory to `~/.local/share/state/commands-rtk/` (command-cache.json, execution-log.jsonl)
-- Scheme registry now reads `~/.config/uri-resolver/config.toml` as primary source, with `MCP_RESOURCE_ROOTS` env var as fallback
-- Resource root handlers refactored from local `resolvedRoots` array to class property `this.roots` with typed `SchemeEntry`
-- Archived logs co-locate with active log in the state directory
+## [0.3.0] - 2026-06-28
 
-### Removed
+- feat: rename server-commands-rtk → commands-rtk
+- feat: rewrite executor with spawn, AbortController, error categorization
+- feat: apply develop stashes — logger rotation, MCP resources, list_archives
+- feat: add CI workflow, MCP client config block, CI badges
+- fix: timeout handling — AbortSignal collectStream, short-circuit exitCodePromise
+- fix: remove conflict markers from package.json
+- fix: add hono direct dep to resolve CVE-2026-54288
+- docs: rewrite README for spawn executor, timeout, write_file
+- docs: polish README with formatting, backtick refs, Requirements, Resources
+- docs: add LICENSE file and MCP badges
+- docs: add user experience references 001-003
+- chore: pin @modelcontextprotocol/sdk to 1.4.0 (pre-bloat)
+- chore: remove RTK_ENHANCEMENT_PROPOSAL.md (archived)
+- chore: guardrail — strip CE.md, BACKLOG.md from main
+- Initial scaffold with .gitignore and pre-commit hooks
 
-- `MCP_RESOURCE_ROOTS` from OpenCode config (replaced by shared TOML config)
-- `hono` direct dependency (previously pinned for CVE mitigation, now handled transitively by SDK)
+## [0.2.2] - 2026-06-28
 
-### Documentation
+- fix: add hono direct dep to resolve CVE-2026-54288 (cherry-picked from develop)
 
-- README: resolve_uri usage, state paths, updated MCP Resources section
-- CE.md: tool count 6→7, resolver.ts + ResolveUriArgs, updated diagram with state dir
-- index.ts --help: restored write_file listing, added MCP_RESOURCE_ROOTS to env vars
-- BENCHMARK.md, OPENCODE_INTEGRATION.md: fixed stale state file paths
-- suite-test.ts: resilience test cache path updated
+## [0.2.0] - 2026-06-26
 
-## [0.2.2] — 2026-06-25
+- init: scaffold project
 
-### Fixed
-
-- Added `hono` as direct dependency to resolve CVE-2026-54288 (transitive from SDK)
-
-## [0.2.1] — 2026-06-20
-
-### Added
-
-- Path security: `validatePath()` + `allowed_directories` config
-- User experience reference docs 004-005
-
-## [0.2.0] — 2026-06-15
-
-### Added
-
-- Full spawn-based executor with AbortController timeout
-- Error categorization (7 categories)
-- Execution logger with auto-rotation and gzip compression
-- MCP resource templates via MCP_RESOURCE_ROOTS
-- `write_file` tool with base64 content
-- `list_archives` tool
-
-### Changed
-
-- Rewrote from exec-based to spawn-based execution (no maxBuffer ceiling)
-- RTK wrapping now uniform (v0.1.0 per-command wrapper config removed)
-- Cache key changed to SHA-256 of (command + cwd)
-
-## [0.1.0] — 2026-06-10
-
-### Added
-
-- Initial scaffold with basic command execution
-- RTK token minimization integration
-- Simple JSON cache
-- Stdio MCP transport
+[0.4.1]: https://github.com/Ev3lynx727/server-commands-rtk/compare/v0.4.0...v0.4.1
+[0.4.0]: https://github.com/Ev3lynx727/server-commands-rtk/compare/v0.3.0...v0.4.0
+[0.3.0]: https://github.com/Ev3lynx727/server-commands-rtk/compare/v0.2.2...v0.3.0
+[0.2.2]: https://github.com/Ev3lynx727/server-commands-rtk/compare/v0.2.0...v0.2.2
+[0.2.0]: https://github.com/Ev3lynx727/server-commands-rtk/releases/tag/v0.2.0
