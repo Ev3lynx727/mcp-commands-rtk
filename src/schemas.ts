@@ -109,3 +109,22 @@ export const ResolveUriArgs = z.object({
 });
 
 export type ResolveUriArgs = z.infer<typeof ResolveUriArgs>;
+
+export const ReadFileArgs = z.object({
+  path: z.string().min(1, "path is required"),
+  max_lines: z.number().int().positive().optional(),
+  tail_lines: z.number().int().positive().optional(),
+  level: z.enum(["none", "minimal", "aggressive"]).default("none"),
+  line_numbers: z.boolean().default(false),
+});
+
+export type ReadFileArgs = z.infer<typeof ReadFileArgs>;
+
+export const ReadFileResult = z.object({
+  path: z.string(),
+  content: z.string(),
+  truncated: z.boolean(),
+  lines: z.number(),
+});
+
+export type ReadFileResult = z.infer<typeof ReadFileResult>;

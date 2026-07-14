@@ -9,7 +9,7 @@ import {
 } from "@modelcontextprotocol/sdk/types.js";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { writeFileSync, mkdirSync, existsSync, readFileSync, readdirSync } from "node:fs";
+import { writeFileSync, mkdirSync, existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import type { SchemeEntry } from "./resolver.js";
 import { expandHome, resolveUri, listSchemes } from "./resolver.js";
 import {
@@ -17,6 +17,7 @@ import {
   ExecutionLogArgs,
   WriteFileArgs,
   ResolveUriArgs,
+  ReadFileArgs,
 } from "./schemas.js";
 import type { ServerConfig } from "./schemas.js";
 import { loadConfig } from "./config.js";
@@ -156,21 +157,53 @@ export class ServerCommandsRTK {
             required: ["path", "content_b64"],
           },
         },
-        {
-          name: "resolve_uri",
-          description:
-            "Resolve a scheme:// URI to an absolute file path. Uses schemes registered via MCP_RESOURCE_ROOTS env var (headquarters://, vaults://, etc.). scheme://. resolves to the base directory.",
-          inputSchema: {
-            type: "object",
-            properties: {
-              uri: {
-                type: "string",
-                description: "URI to resolve, e.g. headquarters://docs/api.md or vaults://.",
+          {
+            name: "resolve_uri",
+            description:
+              "Resolve a scheme:// URI to an absolute file path. Uses schemes registered via MCP_RESOURCE_ROOTS env var (headquarters://, vaults://, etc.). scheme://. resolves to the base directory.",
+            inputSchema: {
+              type: "object",
+              properties: {
+                uri: {
+                  type: "string",
+                  description: "URI to resolve, e.g. headquarters://docs/api.md or vaults://.",
+                },
               },
+              required: ["uri"],
             },
-            required: ["uri"],
           },
-        },
+          {
+            name: "read",
+            description:
+              "Read a file with token-optimized output via `rtk read`. First-class read tool mirroring write_file. Supports max_lines, tail_lines, level (none|minimal|aggressive), and line_numbers.",
+            inputSchema: {
+              type: "object",
+              properties: {
+                path: {
+                  type: "string",
+                  description: "Absolute path to the file to read",
+                },
+                max_lines: {
+                  type: "number",
+                  description: "Max lines to return",
+                },
+                tail_lines: {
+                  type: "number",
+                  description: "Keep only last N lines",
+                },
+                level: {
+                  type: "string",
+                  enum: ["none", "minimal", "aggressive"],
+                  description: "Filter level (default none = full content)",
+                },
+                line_numbers: {
+                  type: "boolean",
+                  description: "Show line numbers",
+                },
+              },
+              required: ["path"],
+            },
+          },
       ],
     }));
 
@@ -256,6 +289,8 @@ export class ServerCommandsRTK {
             return this.handleResolveUri(args);
           case "write_file":
             return this.handleWriteFile(args);
+          case "read":
+            return this.handleReadFile(args);
           default:
             throw new Error(`Unknown tool: ${name}`);
         }
@@ -491,6 +526,55 @@ export class ServerCommandsRTK {
             {
               path: filePath,
               bytes_written: buffer.length,
+            },
+            null,
+            2,
+          ),
+        },
+      ],
+    };
+  }
+
+  private async handleReadFile(
+    args: Record<string, unknown> | undefined,
+  ) {
+    const parsed = ReadFileArgs.parse(args);
+    const { path: filePath, max_lines, tail_lines, level, line_numbers } = parsed;
+
+    if (!existsSync(filePath)) {
+      throw new Error(`File not found: ${filePath}`);
+    }
+    if (!statSync(filePath).isFile()) {
+      throw new Error(`Not a file: ${filePath}`);
+    }
+
+    let cmd = `rtk read ${JSON.stringify(filePath)}`;
+    if (max_lines) cmd += ` --max-lines ${max_lines}`;
+    if (tail_lines) cmd += ` --tail-lines ${tail_lines}`;
+    if (level !== "none") cmd += ` --level ${level}`;
+    if (line_numbers) cmd += ` --line-numbers`;
+
+    const result = await executeCommand(cmd, {
+      timeout_ms: this.config.timeout_ms,
+      max_buffer_mb: this.config.max_buffer_mb,
+      cwd: undefined,
+    });
+
+    if (!result.success) {
+      throw new Error(`read failed: ${result.stderr || result.stdout}`);
+    }
+
+    const content = result.stdout;
+    return {
+      content: [
+        {
+          type: "text",
+          text: JSON.stringify(
+            {
+              path: filePath,
+              content,
+              truncated: !!max_lines || !!tail_lines,
+              lines: content.split("\n").length,
             },
             null,
             2,

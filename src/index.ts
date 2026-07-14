@@ -19,6 +19,7 @@ function printHelp(): void {
     "  execution_log        - Get execution log (last N entries, with --include_archives flag)",
     "  list_archives        - List rotated log archives for dataset pipeline",
     "  write_file           - Write file with base64 content (avoids JSON parse issues)",
+    "  read                - Read file with token-optimized output (rtk read)",
     "  resolve_uri          - Resolve scheme:// URI to absolute file path",
     "",
     "Environment:",
