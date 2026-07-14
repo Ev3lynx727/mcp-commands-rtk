@@ -116,6 +116,7 @@ export const ReadFileArgs = z.object({
   tail_lines: z.number().int().positive().optional(),
   level: z.enum(["none", "minimal", "aggressive"]).default("none"),
   line_numbers: z.boolean().default(false),
+  analyze: z.boolean().default(false),
 });
 
 export type ReadFileArgs = z.infer<typeof ReadFileArgs>;

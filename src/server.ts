@@ -26,6 +26,7 @@ import { CommandCache } from "./cache.js";
 import { ExecutionLogger } from "./logger.js";
 import { executeCommand } from "./executor.js";
 import { categorizeError } from "./errors.js";
+import { analyzeFile } from "@ev3lynx/md-analyzer";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -173,9 +174,9 @@ export class ServerCommandsRTK {
             },
           },
           {
-            name: "read",
+            name: "read_file",
             description:
-              "Read a file with token-optimized output via `rtk read`. First-class read tool mirroring write_file. Supports max_lines, tail_lines, level (none|minimal|aggressive), and line_numbers.",
+              "Read a file with token-optimized output via `rtk read`. First-class read tool mirroring write_file. Supports max_lines, tail_lines, level (none|minimal|aggressive), line_numbers, and analyze (md-analyzer structure for .md files).",
             inputSchema: {
               type: "object",
               properties: {
@@ -289,7 +290,7 @@ export class ServerCommandsRTK {
             return this.handleResolveUri(args);
           case "write_file":
             return this.handleWriteFile(args);
-          case "read":
+          case "read_file":
             return this.handleReadFile(args);
           default:
             throw new Error(`Unknown tool: ${name}`);
@@ -539,7 +540,7 @@ export class ServerCommandsRTK {
     args: Record<string, unknown> | undefined,
   ) {
     const parsed = ReadFileArgs.parse(args);
-    const { path: filePath, max_lines, tail_lines, level, line_numbers } = parsed;
+    const { path: filePath, max_lines, tail_lines, level, line_numbers, analyze } = parsed;
 
     if (!existsSync(filePath)) {
       throw new Error(`File not found: ${filePath}`);
@@ -565,20 +566,24 @@ export class ServerCommandsRTK {
     }
 
     const content = result.stdout;
+    const response: Record<string, unknown> = {
+      path: filePath,
+      content,
+      truncated: !!max_lines || !!tail_lines,
+      lines: content.split("\n").length,
+    };
+    if (analyze && filePath.endsWith(".md")) {
+      try {
+        response.analysis = analyzeFile(filePath);
+      } catch (e: unknown) {
+        response.analysis_error = e instanceof Error ? e.message : String(e);
+      }
+    }
     return {
       content: [
         {
           type: "text",
-          text: JSON.stringify(
-            {
-              path: filePath,
-              content,
-              truncated: !!max_lines || !!tail_lines,
-              lines: content.split("\n").length,
-            },
-            null,
-            2,
-          ),
+          text: JSON.stringify(response, null, 2),
         },
       ],
     };
