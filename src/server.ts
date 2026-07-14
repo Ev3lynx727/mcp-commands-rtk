@@ -204,6 +204,7 @@ export class ServerCommandsRTK {
               },
               required: ["path"],
             },
+            annotations: { readOnlyHint: true },
           },
       ],
     }));
@@ -583,9 +584,10 @@ export class ServerCommandsRTK {
       content: [
         {
           type: "text",
-          text: JSON.stringify(response, null, 2),
+          text: content,
         },
       ],
+      structuredContent: response,
     };
   }
 
