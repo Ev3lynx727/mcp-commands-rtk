@@ -187,7 +187,7 @@ export class ServerCommandsRTK {
           {
           name: "read_file",
           description:
-            "Read a file with token-optimized output via `rtk read`. Use when: you need file content (any type) - first-class read mirroring write_file. Prefer over: the builtin read tool - routes through rtk for output compression (~38% on large files) and supports analyze. Avoid when: you have a scheme URI, not a path - call resolve_uri first, then read_file the result. Set analyze:true on .md to also get md-analyzer structure (headings, links, tokens).",
+            "Read a file with token-optimized output via `rtk read`. Use when: you need file content (any type) - first-class read mirroring write_file. Prefer over: the builtin read tool - routes through rtk for token-optimized output; full reads are faithful (~0% on prose), truncated reads (max_lines/level) save up to ~38% on large repetitive files (JSON, logs, lists). Also supports analyze for .md. Avoid when: you have a scheme URI, not a path - call resolve_uri first, then read_file the result. Set analyze:true on .md to also get md-analyzer structure (headings, links, tokens).",
             inputSchema: {
               type: "object",
               properties: {

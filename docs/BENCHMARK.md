@@ -60,7 +60,7 @@ No subprocess overhead — string concat only.
 |---------|-------|---------|------|-------|
 | `rtk curl` (API calls) | 5 | ~6.5M | 99.5% | JSON/HTML responses compress heavily |
 | `rtk grep` | 66 | 2.1M | 16.0% | Dense search output |
-| `rtk read` | 62 | 2.0M | 38.7% | Dense text |
+| `rtk read` | 62 | 2.0M | 38.7% | Blended avg |
 | `rtk find` | 61 | 190.2K | 53.2% | File listings |
 | `rtk ps aux` | 60 | 201.4K | 79.1% | Process lists |
 | `rtk git commit` | 39 | 152.9K | 84.2% | Structured output |
@@ -71,6 +71,7 @@ No subprocess overhead — string concat only.
 - **High token commands** (curl) see 99%+ reduction — JSON responses compress heavily
 - **Text search** (grep) sees modest 16% reduction but high absolute savings (2.1M tokens)
 - **Overall 73%** savings — 4,493 commands tracked globally, 573 via commands-rtk `run_process`
+- `rtk read` 38.7% is a **blended average**: full reads of prose/markdown return faithful content (~0% savings); the average comes from truncated reads (`max_lines`/`level`) and repetitive files (JSON, logs, lists). Compact articles save ~0%.
 - commands-rtk execution log matches RTK schema: 573 entries, no stale fields in recent records
 
 ---
